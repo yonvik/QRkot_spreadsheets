@@ -1,32 +1,58 @@
 from datetime import datetime as dt
 
+from fastapi import HTTPException
 from aiogoogle import Aiogoogle
 
 from app.core.config import settings
 
 FORMAT = "%Y/%m/%d %H:%M:%S"
 
+SHEET_ID = 0
+ROW_COUNT = 100
+COLUMN_COUNT = 11
+
+SPREADSHEET_HEAD = [
+    ['Отчет от', ],
+    ['Топ проектов по скорости закрытия'],
+    ['Название проекта', 'Время сбора', 'Описание']
+]
+
+SPREADSHEET_BODY = dict(
+    properties=dict(
+        title='Отчет на ',
+        locale='ru_RU',
+    ),
+    sheets=[dict(properties=dict(
+        sheetType='GRID',
+        sheetId=SHEET_ID,
+        title='Лист1',
+        gridProperties=dict(
+            rowCount=ROW_COUNT,
+            columnCount=COLUMN_COUNT,
+        )
+    ))]
+)
+
+ERROR_COUNT_ROWS_OR_COLUMN = (
+    'Ошибка! Передаваемые значения превышают созданные границы таблицы. '
+    'Создано строк: {rows_create}, столбцов {columns_create}. '
+    'Граница строк {rows_limit}, граница столбцов {columns_limit}.'
+)
+
 
 async def spreadsheets_create(wrapper_services: Aiogoogle) -> str:
     service = await wrapper_services.discover('sheets', 'v4')
-    spreadsheet_body = {
-        'properties': {'title': f'Отчет на {dt.now().strftime(FORMAT)}',
-                       'locale': 'ru_RU'},
-        'sheets': [{'properties': {'sheetType': 'GRID',
-                                   'sheetId': 0,
-                                   'title': 'Лист1',
-                                   'gridProperties': {'rowCount': 100,
-                                                      'columnCount': 11}}}]
-    }
+    spreadsheet_body = SPREADSHEET_BODY.copy()
+    spreadsheet_body['properties']['title'] += dt.now().strftime(FORMAT)
     response = await wrapper_services.as_service_account(
         service.spreadsheets.create(json=spreadsheet_body)
     )
-    spreadsheetid = response['spreadsheetId']
-    return spreadsheetid
+    spreadsheet_id = response['spreadsheetId']
+    return spreadsheet_id
 
 
 async def set_user_permissions(
-        spreadsheetid: str,
+        spreadsheet_id: str,
         wrapper_services: Aiogoogle
 ) -> None:
     permissions_body = {'type': 'user',
@@ -35,35 +61,41 @@ async def set_user_permissions(
     service = await wrapper_services.discover('drive', 'v3')
     await wrapper_services.as_service_account(
         service.permissions.create(
-            fileId=spreadsheetid,
+            fileId=spreadsheet_id,
             json=permissions_body,
             fields="id"
         ))
 
 
 async def spreadsheets_update_value(
-        spreadsheetid: str,
+        spreadsheet_id: str,
         charity_projects: list,
         wrapper_services: Aiogoogle
 ) -> None:
     service = await wrapper_services.discover('sheets', 'v4')
     table_values = [
-        ['Отчет от', dt.now().strftime(FORMAT)],
-        ['Топ проектов по скорости закрытия'],
-        ['Название проекта', 'Время сбора', 'Описание']
+        *(SPREADSHEET_HEAD.copy())[0].append(f'{dt.now().strftime(FORMAT)}'),
+        *[list(map(str, [
+               project.name,
+               project.close_date - project.create_date,
+               project.description
+               ])) for project in charity_projects],
     ]
-    for project in charity_projects:
-        new_row = [
-            str(project['name']),
-            str(project['data_time']),
-            str(project['description'])
-        ]
-        table_values.append(new_row)
+    rows = len(table_values)
+    columns = max(len(columns) for columns in table_values)
+    if rows > ROW_COUNT or columns > COLUMN_COUNT:
+        raise HTTPException(
+            status_code=404, detail=ERROR_COUNT_ROWS_OR_COLUMN.format(
+                rows_create=ROW_COUNT,
+                columns_create=COLUMN_COUNT,
+                rows_limit=rows,
+                columns_limit=columns
+            ))
 
     await wrapper_services.as_service_account(
         service.spreadsheets.values.update(
-            spreadsheetId=spreadsheetid,
-            range='A1:E30',
+            spreadsheetId=spreadsheet_id,
+            range=f'R1C1:R{rows}C{columns}',
             valueInputOption='USER_ENTERED',
             json={
                 'majorDimension': 'ROWS',

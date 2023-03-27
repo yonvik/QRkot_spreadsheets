@@ -27,7 +27,7 @@ class CharityProjectCRUD(BaseCRUD):
         self,
         db_obj,
         session: AsyncSession
-    ):
+    ) -> CharityProject:
         await session.delete(db_obj)
         await session.commit()
         return db_obj
@@ -38,7 +38,7 @@ class CharityProjectCRUD(BaseCRUD):
         db_obj,
         session: AsyncSession,
         commit: bool = True
-    ):
+    ) -> CharityProject:
         obj_data = jsonable_encoder(db_obj)
         update_data = obj_in.dict(exclude_unset=True)
         for field in obj_data:
@@ -58,13 +58,7 @@ class CharityProjectCRUD(BaseCRUD):
             select(CharityProject).where(CharityProject.fully_invested)
         )
         list_projects = available_projects.scalars().all()
-        projects = []
-        for obj in list_projects:
-            projects.append({
-                'name': obj.name,
-                'data_time': obj.close_date - obj.create_date,
-                'description': obj.description})
-        return sorted(projects, key=lambda x: x['data_time'])
+        return list_projects
 
 
 charityproject_crud = CharityProjectCRUD(CharityProject)
