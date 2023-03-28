@@ -24,7 +24,7 @@ async def get_report(
 
 ):
     """Только для суперюзеров."""
-    projects = await charity_project.get_projects_by_completion_rate(
+    projects = await charity_project.get_projects(
         session
     )
     spreadsheet_id = await spreadsheets_create(wrapper_services)

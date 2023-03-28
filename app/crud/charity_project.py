@@ -50,15 +50,13 @@ class CharityProjectCRUD(BaseCRUD):
             await session.refresh(db_obj)
         return db_obj
 
-    async def get_projects_by_completion_rate(
+    async def get_projects(
         self,
         session: AsyncSession
     ) -> Optional[list[dict[str, str]]]:
-        available_projects = await session.execute(
+        return await session.execute(
             select(CharityProject).where(CharityProject.fully_invested)
-        )
-        list_projects = available_projects.scalars().all()
-        return list_projects
+        ).scalars().all()
 
 
 charityproject_crud = CharityProjectCRUD(CharityProject)
